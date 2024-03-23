@@ -160,82 +160,76 @@ X_test = test.drop(columns=["protein_sequence", "data_source"]).values
 shingled_dimensions = (X.shape[0], 
                        cutoff_length + 2*pad_length - shingle_size, 
                        (amino_acid_data.columns.shape[0]-1) * shingle_size)
-X_shingled = np.zeros(shingled_dimensions, dtype=np.float32)
-y_shingled = np.zeros(shingled_dimensions[:-1], dtype=np.float32)
+
 
 # Create dataset for shingles
 i = 0
 t0 = time.time()
-for entry_num, x_val, y_val in zip(range(len(y)), X, y):
-    # Get attributes of sequence
-    sequence = x_val[0]
-    pH = x_val[1]
-    length = x_val[2]
 
-    # Get amino acid properties for all residues in sequence
-    row = np.array([amino_acid_data_dictionary[amino_acid] for amino_acid in sequence])
+with open("./train_all.svm.txt", "w") as f_svm:
+    with open("y_train.csv", "w") as f_csv:
+        for entry_num, x_val, y_val in zip(range(len(y)), X, y):
+            # Get attributes of sequence
+            sequence = x_val[0]
+            pH = x_val[1]
+            length = x_val[2]
 
-    # Convert pH values to concentrations of non-dissociated residue
-    row[:, [2,3, 4,5]] = row[:, [2,3, 4,5]] - pH
-    row[:, 3] = row[:, 3] - (14-pH)
-    row[:, 2:6] = 10 ** (row[:, 2:6])
-    row[:, 2:6] = 1 / (row[:, 2:6] + 1)
-    row = np.nan_to_num(row, nan=1.0)
+            # Get amino acid properties for all residues in sequence
+            row = np.array([amino_acid_data_dictionary[amino_acid] for amino_acid in sequence])
 
-    # Get a list of shingles
-    row = np.array(
-            [row[j:j+shingle_size].reshape(-1) 
-             for j in range(row.shape[0]-shingle_size)]
-    )
-    
-    # Add shingles to pre-allocated array
-    X_shingled[entry_num] = row
-    y_shingled[entry_num, :] = y_val
-    
-    # Update Counter
-    i += 1
-    print(f"At {int(100 * i/len(y))}%. ", 
-          f"Runtime: {int((time.time()-t0)/60)} minutes", end="\r")
-print()
+            # Convert pH values to concentrations of non-dissociated residue
+            row[:, [2,3, 4,5]] = row[:, [2,3, 4,5]] - pH
+            row[:, 3] = row[:, 3] - (14-pH)
+            row[:, 2:6] = 10 ** (row[:, 2:6])
+            row[:, 2:6] = 1 / (row[:, 2:6] + 1)
+            row = np.nan_to_num(row, nan=1.0)
 
-print(X_shingled.shape)
+            # Get a list of shingles
+            row = np.array(
+                    [row[j:j+shingle_size].reshape(-1) 
+                    for j in range(row.shape[0]-shingle_size)]
+            )
 
-print("Saving all train data")
-if not os.path.exists("./train_all.svm.txt"):
-    dump_svmlight_file(X_shingled.reshape(-1, X_shingled.shape[-1]), 
-                       y_shingled.reshape(-1), 
-                       f"train_all.svm.txt")
-    np.savez_compressed("y_train.csv", y_shingled.reshape(-1))
+            for line in row:
+                out_string = f"{y_val} " + " ".join([f"{col_num}:{float(col_val)}" for col_num, col_val in enumerate(line) if col_val != 0])
+                f_svm.write(f"{out_string}\n")
+                f_csv.write(f"{y_val},\n")
+            
+            # Update Counter
+            i += 1
+            print(f"At {int(100 * i/len(y))}%. ", 
+                f"Runtime: {int((time.time()-t0)/60)} minutes", end="\r")
+        print()
 
 
 
 shingled_dimensions = ((cutoff_length + 2*pad_length - shingle_size) * X_test.shape[0],
                        (amino_acid_data.columns.shape[0]-1) * shingle_size)
-X_shingled = np.zeros(shingled_dimensions, dtype=np.float32)
 
 i = 0
 t0 = time.time()
-for x in X_test:
-    sequence = x[0]
-    pH = x[1]
-    length = x[2]
 
-    row = np.array([amino_acid_data_dictionary[amino_acid] for amino_acid in sequence])
-    row[:, [2,3, 4,5]] = row[:, [2,3, 4,5]] - pH
-    row[:, 3] = row[:, 3] - (14-pH)
-    row[:, 2:6] = 10 ** (row[:, 2:6])
-    row[:, 2:6] = 1 / (row[:, 2:6] + 1)
-    row = np.nan_to_num(row, nan=1.0)
-    row = np.array([row[j:j+shingle_size].reshape(-1) for j in range(row.shape[0]-shingle_size)])
+with open("y_train.csv", "w") as f_csv:
+    for x in X_test:
+        sequence = x[0]
+        pH = x[1]
+        length = x[2]
 
-    X_shingled[i:i+(cutoff_length + 2*pad_length - shingle_size)] = row
+        row = np.array([amino_acid_data_dictionary[amino_acid] for amino_acid in sequence])
+        row[:, [2,3, 4,5]] = row[:, [2,3, 4,5]] - pH
+        row[:, 3] = row[:, 3] - (14-pH)
+        row[:, 2:6] = 10 ** (row[:, 2:6])
+        row[:, 2:6] = 1 / (row[:, 2:6] + 1)
+        row = np.nan_to_num(row, nan=1.0)
+        row = np.array([row[j:j+shingle_size].reshape(-1) for j in range(row.shape[0]-shingle_size)])
+        
+        for line in row:
+            out_string = ",".join([f"{col_val}" for col_val in line])
+            f_csv.write(f"{out_string},\n")
 
-    i += (cutoff_length + 2*pad_length - shingle_size)
 
-    print(f"At {int(100 * i/shingled_dimensions[0])}%. Runtime: {int((time.time()-t0)/60)} minutes", end="\r")
+        i += (cutoff_length + 2*pad_length - shingle_size)
 
-print("Saving all test data")
-pd.DataFrame(X_shingled.reshape(-1, X_shingled.shape[-1]), 
-        columns=column_names).to_csv(f"X_test.csv")
+        print(f"At {int(100 * i/shingled_dimensions[0])}%. Runtime: {int((time.time()-t0)/60)} minutes", end="\r")
 
 
